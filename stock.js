@@ -1,36 +1,32 @@
 const axios = require('axios');
 
-// 要取得的股票代碼
-const stockListTSE = ['1517', '1609', '2330', '2317', '1216'];
-const stockListOTC = ['6547', '6180'];
+// Function to make the API call and process the data
+const fetchData = () => {
+  const stockListTSE = [
+    '0050', '0056', '00713', '00878',
+    '2330', '2303', '2454', '2317',
+    '1517', '1609', '1605', '6443'
+  ];
+  const stockListOTC = ['5278'];
 
-// 組合 API 需要的股票清單字串
-const stockList1 = stockListTSE.map(stock => `tse_${stock}.tw`).join('|');
-const stockList2 = stockListOTC.map(stock => `otc_${stock}.tw`).join('|');
-const stockList = `${stockList1}|${stockList2}`;
+  const stockList1 = stockListTSE.map(stock => `tse_${stock}.tw`).join('|');
+  const stockList2 = stockListOTC.map(stock => `otc_${stock}.tw`).join('|');
+  const stockList = `${stockList1}|${stockList2}`;
 
-// 組合完整的 URL
-const queryUrl = `http://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${stockList}`;
+  const queryUrl = `http://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${stockList}&delay=0`;
 
-// 呼叫股票資訊 API
-axios.get(queryUrl)
-  .then(response => {
-    // 判斷該 API 呼叫是否成功
+  axios.get(queryUrl).then(response => {
     if (response.status !== 200) {
-      throw new Error('取得股票資訊失敗.');
+      throw new Error('取得股票資訊失敗...');
     } else {
-      console.log(response.data);
-      // 將回傳的 JSON 格式資料轉成 JavaScript 的物件
       const data = response.data;
-
-      // 過濾出有用到的欄位
       const columns = ['c', 'n', 'z', 'tv', 'v', 'o', 'h', 'l', 'y', 'tlong'];
       const stockDataFrame = data.msgArray.map(stock => {
         return {
           '股票代號': stock.c,
           '公司簡稱': stock.n,
-          '成交價': stock.z,
-          '成交量': stock.tv,
+          '成交價': (stock.z != '-' ? stock.z : previousPriceData[stock.c]?.['成交價'] || 0), // Use previous data if new data is not available
+          '成交量': (stock.tv != '-' ? stock.tv : previousVolumData[stock.c]?.['成交量'] || 0),
           '累積成交量': stock.v,
           '開盤價': stock.o,
           '最高價': stock.h,
@@ -70,8 +66,26 @@ axios.get(queryUrl)
         stock['資料更新時間'] = time2str(stock['資料更新時間']);
       });
 
-      // 顯示股票資訊
       console.table(df);
+
+      // Store the current data to use as previous data in the next call
+      previousPriceData = df.reduce((obj, stock) => {
+        obj[stock['股票代號']] = { '成交價': stock['成交價'] };
+        return obj;
+      }, {});
+      previousVolumData = df.reduce((obj, stock) => {
+        obj[stock['股票代號']] = { '成交量': stock['成交量'] };
+        return obj;
+      }, {});
     }
   })
-  .catch(error => console.error(error));
+    .catch(error => console.error(error));
+};
+
+// Variable to store previous data
+let previousPriceData = {};
+let previousVolumData = {};
+
+// Call the fetchData function every second
+fetchData()
+setInterval(fetchData, 3600);
